@@ -1,0 +1,263 @@
+---
+title: "Final Project - Data Wrangling"
+author: "Justin McDonald"
+output: html_document
+date: "2025-05-10"
+---
+
+# Introduction
+Streaming platforms like Spotify and Apple Music have transformed how we consume music, raising questions about what drives a track's success. One key question is whether shorter tracks are more engaging, especially in a time of shrinking attention spans and short-form content. I aim to explore how track duration influences listener engagement and how this trend has evolved in the modern music industry.
+
+This topic is inspired by both personal experience and broader shifts in digital media habits. My hypothesis is that shorter tracks lead to higher engagement. I’ll test this using regression analysis on my Apple Music data—tracking play counts, durations, and skips and supplement it with Spotify API data and Billboard Top 100 trends to compare personal behavior with global patterns.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(httr)
+library(jsonlite)
+library(spotifyr)
+library(ggplot2)
+library(knitr)
+library(rmarkdown)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(moderndive)
+library(infer)
+library(rvest)
+library(billboard)
+```
+
+```{r FurtherSetup, include=FALSE}
+# Getting Spotify API Access Token
+Sys.setenv(SPOTIFY_CLIENT_ID = "f7105d2d996c4cd9b1df5b0c2cb9416d",
+           SPOTIFY_CLIENT_SECRET = "9f937c84e0d94e73bacc7252240457b8")
+access_token <- get_spotify_access_token()
+
+# Billboard Data
+BillBoardData <- billboard::wiki_hot_100s
+
+#Importing CSV into Table
+AppleMusicData <- read.csv("/Users/justin/Downloads/Apple Media Services information Part 1 of 2/Apple_Media_Services/Apple Music Activity/Apple Music Play Activity.csv")
+
+#Filtering Columns
+AppleMusicData <- AppleMusicData[, c("Album.Name","Song.Name", "Media.Duration.In.Milliseconds", "Play.Duration.Milliseconds","End.Reason.Type","Feature.Name")]
+
+#Removing NA Values
+AppleMusicData <- na.omit(AppleMusicData)
+AppleMusicData <- AppleMusicData %>%
+  filter(if_all(everything(), ~ !is.na(.) & . != ""))
+
+#Refining Columns - Milliseconds aren't very useful, seconds are more widely used when looking at music, negative values were also present, had to take absolute value.
+AppleMusicData <- AppleMusicData %>%
+  mutate(
+    Media.Duration.In.Milliseconds = abs(Media.Duration.In.Milliseconds) / 1000, 
+    Play.Duration.Milliseconds = abs(Play.Duration.Milliseconds)
+  ) %>%
+  rename(Media.Duration.In.Seconds = Media.Duration.In.Milliseconds)
+
+AppleMusicData <- AppleMusicData %>%
+  mutate(
+    Play.Duration.Milliseconds = abs(Play.Duration.Milliseconds) / 1000
+  ) %>%
+  rename(Play.Duration.Seconds = Play.Duration.Milliseconds)
+
+#Cleaned Version as CSV
+write.csv(AppleMusicData, "AppleMusicData.csv", row.names = FALSE)
+```
+
+# My Data Analysis
+
+### Playback Behavior by End Type
+For this code chunk, I utilize the packages dplyr and ggplot2 to analyze and visualize listener behavior based on how songs end during playback. Using dplyr, I group and count the number of times each unique End.Reason.Type appears in the dataset, which categorizes whether a track was skipped, completed, or ended for another reason.
+
+I then use ggplot2 to create a bar chart that displays the frequency of each end reason type. This visualization helps identify which end behaviors are most common in my listening habits. 
+
+```{r Listening Habits, echo=FALSE}
+# End Type Frequency
+EndReasonCount <- AppleMusicData %>%
+  count(End.Reason.Type)
+
+ggplot(EndReasonCount, aes(x = End.Reason.Type, y = n)) +
+  geom_bar(stat = "identity", fill = "blue", color = "black", alpha = 0.5) +
+  labs(title = "Frequency of Each End Reason Type",
+       x = "End Reason Type",
+       y = "Count") +
+    theme(axis.text.x = element_text(angle = 75, hjust = 1, size = 5), plot.margin = margin(t = 0,b = 0))  
+```
+
+Based on the graph, I typically play songs all the way through. Aside from external factors like exiting the app or software interruptions, the least common end behavior is rewinding to the previous track. This suggests a general tendency to listen through entire songs rather than skipping or going back.
+
+### Longer or Shorter Songs
+In this section, I use dplyr to summarize and classify the duration of songs in my Apple Music dataset. I calculate the average, median, minimum, and maximum track lengths to get a general sense of how long the songs I listen to typically are. I also create a new variable, SongLengthCategory, which classifies songs as Short (<180s), Medium (180–300s), or Long (>300s), and then count how many songs fall into each category.
+
+Using ggplot2, I visualize the distribution of song durations with a histogram, focusing on tracks between 0 and 500 seconds. I also generate a bar chart showing the number of songs in each length category. These visualizations help identify patterns in my listening habits—such as a preference for medium-length songs—and provide insight into the overall structure of my music library.
+
+```{r SongLengthListening, echo=FALSE}
+#Table for Listened Song Information
+SongInformation <- AppleMusicData %>%
+  summarize(
+    AverageDuration = mean(Media.Duration.In.Seconds),
+    MedianDuration = median(Media.Duration.In.Seconds),
+    MaxDuration = max(Media.Duration.In.Seconds),
+    MinDuration = min(Media.Duration.In.Seconds))
+
+#Grouping/Classifying Song Duration
+AppleMusicData <- AppleMusicData %>%
+  mutate(
+    SongLengthCategory = case_when(
+      Media.Duration.In.Seconds < 180 ~ "Short",
+      Media.Duration.In.Seconds >= 180 & Media.Duration.In.Seconds <= 300 ~ "Medium",
+      Media.Duration.In.Seconds > 300 ~ "Long"))
+
+#Creating a Table for Each Song Length
+LengthInformation <- AppleMusicData %>%
+  count(SongLengthCategory)
+
+#Graphing Distribution - Histogram
+ggplot(AppleMusicData, aes(x = Media.Duration.In.Seconds)) +
+  geom_histogram(binwidth = 30, color = "black", fill="orange", alpha = 0.5) +
+  xlim(0,500)+
+  labs(
+    title = "Distribution of Song Durations",
+    x = "Song Length (Seconds)",
+    y = "Frequency")
+
+#Graphing Distribution - Bar Graph
+ggplot(AppleMusicData, aes(x = SongLengthCategory)) +
+  geom_bar(color = "black", fill ="orange", alpha =0.5) +
+  labs(
+    title = "Distribution of Songs by Length Category",
+    x = "Song Length Category",
+    y = "Frequency")
+```
+
+The results show that the vast majority of songs I listen to are classified as Short (19,293 songs), followed by Medium (4,124 songs), and only a small number as Long (188 songs). This highlights a strong preference for shorter tracks, consistent with modern music trends.
+
+### Impact of Song Length on Listening Time
+This section examines how song duration relates to listening behavior using two different methods. First, I calculate Percent.Listened by dividing the play time by the full song duration and remove any non-finite values to clean the data. I then round the result for easier interpretation.
+
+The first graph is a box plot comparing the proportion of each song listened to across Short, Medium, and Long categories. It shows how completely songs of different lengths are typically played.
+
+The second graph is a scatter plot with a regression line, plotting total song duration against actual play time in seconds. This reveals whether longer songs result in more listening time overall.
+
+```{r Regression, echo=FALSE}
+# Mutating additional column for percentage
+AppleMusicData <- AppleMusicData %>%
+  mutate(Percent.Listened = Play.Duration.Seconds / Media.Duration.In.Seconds) %>%
+  filter(is.finite(Percent.Listened))
+
+AppleMusicData$Percent.Listened <- round(AppleMusicData$Percent.Listened, 3)
+
+# Box Plot
+ggplot(AppleMusicData, aes(x = SongLengthCategory, y = Percent.Listened)) +
+  geom_boxplot() +
+  labs(title = "Percent of Song Listened by Length Category",
+       x = "Song Length Category",
+       y = "Proportion Listened")
+
+# Scatter Plot
+ggplot(AppleMusicData, aes(x = Media.Duration.In.Seconds, y = Play.Duration.Seconds)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "orange") +
+  labs(title = "Play Time vs. Song Duration", x = "Song Duration (Seconds)", y = "Play Time (Seconds)")
+```
+
+While longer songs result in more total listening time, they are less likely to be played in full. In contrast, shorter songs are more consistently listened to completely, indicating higher proportional engagement. This supports the idea that song length influences both how much and how completely a track is consumed.
+
+# Spotify & Billboard Data
+```{r TertiarySetup, include=FALSE}
+#Data set too Large, taking a sample, setting a seed for reproducibility
+BillBoardSample <- BillBoardData %>%
+  sample_n(250)
+
+#Function for Finding song length of each song
+get_song_length <- function(song_name, artist_name) {
+  query <- paste(song_name, artist_name, sep = " ")
+  track_info <- search_spotify(query, type = "track", limit = 1)
+
+  if(length(track_info$duration_ms) > 0) {
+    songlength <- track_info$duration_ms
+    songlength_in_seconds <- songlength / 1000
+    return(songlength_in_seconds)
+  } else {
+    return(NA)}}
+
+#Function for Finding popularity of each song
+get_song_popularity <- function(song_name, artist_name) {
+  query <- paste(song_name, artist_name, sep = " ")
+  track_info <- search_spotify(query, type = "track", limit = 1)
+  
+  if(length(track_info$popularity) > 0) {
+    popularity <- track_info$popularity
+    return(popularity)
+  } else {
+    return(NA)}}
+
+#Applying Function to Dataset
+BillBoardSample <- BillBoardSample %>%
+  rowwise() %>%
+  mutate(
+    Song_Length_Seconds = get_song_length(title, artist),
+    Popularity = get_song_popularity(title, artist)
+    ) %>%
+  ungroup()
+```
+
+```{r SavingCSV for Reproducing, include=FALSE}
+BillBoard_Sample <- BillBoardSample
+
+write.csv(BillBoard_Sample, "BillBoard_Sample.csv", row.names = FALSE)
+```
+
+```{r Editing CSV / Cleaning, include=FALSE}
+BillBoard_Sample <- BillBoard_Sample %>%
+  mutate(
+    SongLengthCategory = case_when(
+      Song_Length_Seconds < 180 ~ "Short",
+      Song_Length_Seconds >= 180 & Song_Length_Seconds <= 300 ~ "Medium",
+      Song_Length_Seconds > 300 ~ "Long"))
+```
+
+### Song Length Correlation to Billboard Popularity
+This bar plot is used to visualize the distribution of song length categories (Short, Medium, Long) within the sampled Billboard dataset. It provides a clear and simple way to see which song durations are most common among the world's most popular tracks. By categorizing and counting songs by length, this plot helps identify whether shorter songs dominate mainstream music—supporting the broader analysis of trends in track duration and listener engagement.
+
+```{r Song&Billboard, echo=FALSE}
+ggplot(BillBoard_Sample, aes(x = SongLengthCategory)) +
+  geom_bar(color = "black") +
+  labs(
+    title = "Frequency of Song Length Categories",
+    x = "Song Length Category",
+    y = "Frequency") 
+```
+
+The bar chart shows that medium-length songs (180–300 seconds) are the most common in the Billboard sample, with a significantly higher frequency than both short (<180 seconds) and long (>300 seconds) songs. Short songs appear less frequently, and long songs are the least common. This suggests that mainstream music trends still favor tracks in the 3–5 minute range, possibly because they balance listener engagement with radio/playlist compatibility.
+
+### Song Length Ability to Predict Popularity
+This graph is used to examine the relationship between a song’s length and its popularity by running a linear regression model. By modeling Popularity as a function of Song_Length_Seconds, we can assess whether longer or shorter songs tend to be more popular.
+
+```{r Pop_Length, echo=FALSE}
+# Regression
+model_popularity <- lm(Popularity ~ Song_Length_Seconds, data = BillBoard_Sample)
+summary(model_popularity)
+
+# Scatter Plot
+ggplot(BillBoard_Sample, aes(x = Song_Length_Seconds, y = Popularity)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(
+    title = "Popularity vs. Song Length",
+    x = "Song Length (Seconds)",
+    y = "Popularity")
+```
+
+The regression results show that song length has no significant impact on popularity in the Billboard sample. The slope estimate (0.0029) is negligible, and the high p-value (0.891) confirms the effect is not statistically meaningful. The near-zero R² (0.000075) indicates that song length explains almost none of the variation in popularity.
+
+This contrasts with earlier findings, where medium-length songs were the most common in the dataset and shorter songs were listened to more completely. Together, these results suggest that while track length may influence listener engagement, it does not directly drive popularity, which is likely shaped by other factors like artist visibility, marketing, or genre trends.
+
+Overall, the plot visually confirms the regression results: song length does not meaningfully influence popularity. Songs of all lengths appear across the full range of popularity scores, supporting the conclusion that factors other than duration—such as artist, genre, or promotion—are likely more important in determining a song’s success.
+
+# Conclusion
+Overall, my analysis shows that while shorter songs tend to be listened to more completely, song length alone does not significantly impact popularity. This suggests that listener engagement and commercial success are shaped by different factors, such as personal habits versus industry trends.
+
+# Appendix
+The only use of AI in this project was using Grammarly to edit my writing.
