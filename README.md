@@ -1,4 +1,4 @@
-<h1> Data Analysis </h1>
+<h1> Music Engagement Across Platforms </h1>
 
 <hr>
 
@@ -57,20 +57,6 @@ This repository contains the final project for the Spring 2025 <em>Data Wranglin
   <li>Save a cleaned, tidy version of the final dataset as a CSV for reproducibility.</li>
   <li>Produce clean, well-formatted tables and figures explaining each step of the wrangling process.</li>
 </ul>
-
-<hr>
-
-<h2>How to Reproduce</h2>
-<ol>
-  <li>Clone this repository:
-    <pre><code>git clone https://github.com/yourusername/data-wrangling-final.git
-cd data-wrangling-final</code></pre>
-  </li>
-  <li>Open <code>finalprojsp2025.Rmd</code> in RStudio.</li>
-  <li>Ensure Python (with <code>billboard</code> installed) is configured for use in R if Billboard scraping is included.</li>
-  <li>Knit the file to HTML.</li>
-</ol>
-<p><strong>Note:</strong> API tokens and Apple Music exports are not included in the repository. You may need to supply your own credentials and data to replicate the full workflow.</p>
 
 <hr>
 
